@@ -58,10 +58,9 @@ async function syncFreeModels() {
       // id trong catalog là "mimo-v2.5-free" không prefix, cần map thành opencode/<id>
       const canonical = id.startsWith('opencode/') ? id : `opencode/${id}`;
       const bare = canonical.replace('opencode/', '');
-      // Filter theo runtime nếu có
+      // FIX: chỉ giữ free thực tế có trong Zen live (anh Nghĩa báo chỉ 6-7, không phải 30 catalog)
       if (runtimeIds && !runtimeIds.has(bare) && !runtimeIds.has(canonical)) {
-        // Vẫn giữ nếu là free nhưng chưa xuất hiện ở zen (để tương lai dùng) — nhưng đánh dấu
-        // Ở đây giữ lại để đủ 28, OpenCode vẫn gọi được khi Zen mở thêm model
+        continue; // bỏ model catalog nhưng Zen chưa expose
       }
       free.push({
         id: canonical,
