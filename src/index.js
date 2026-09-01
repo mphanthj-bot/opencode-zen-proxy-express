@@ -7,6 +7,10 @@ const { config } = require('./config/constants');
 
 const app = createApp();
 
+// Sync FREE_MODELS live trước khi listen (không block nếu fail)
+const { refreshFreeModels } = require('./config/models');
+refreshFreeModels().catch(() => {});
+
 const server = app.listen(config.port, config.host, () => {
   const authMode = config.clientApiKey
     ? 'client auth (CLIENT_API_KEY)'
@@ -21,6 +25,8 @@ const server = app.listen(config.port, config.host, () => {
   Health check:      http://${config.host}:${config.port}/health
   Models list:       http://${config.host}:${config.port}/v1/models
   Chat completions:  POST http://${config.host}:${config.port}/v1/chat/completions
+  Responses:         POST http://${config.host}:${config.port}/v1/responses
+  Messages:          POST http://${config.host}:${config.port}/v1/messages
 
   Backend:           ${config.zenApiBaseUrl} (direct, no local binary)
   Auth mode:         ${authMode}

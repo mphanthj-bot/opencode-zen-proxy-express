@@ -10,7 +10,7 @@
  * Note: Free models may collect usage data for model improvement.
  * Do not submit sensitive/confidential data when using free endpoints.
  */
-const FREE_MODELS = [
+const FALLBACK_FREE_MODELS = [
   {
     id: 'opencode/deepseek-v4-flash-free',
     name: 'DeepSeek V4 Flash Free',
@@ -63,6 +63,10 @@ const FREE_MODELS = [
   },
 ];
 
+// FREE_MODELS sẽ được sync live từ models.opencode.ai/api.json khi khởi động.
+// Giữ hardcode làm fallback khi offline.
+let FREE_MODELS = [...FALLBACK_FREE_MODELS];
+
 const ALL_MODELS = [...FREE_MODELS];
 
 /**
@@ -108,11 +112,44 @@ function getModelInfo(modelId) {
   return ALL_MODELS.find((m) => m.id === canonicalId) || null;
 }
 
+async function refreshFreeModels() {
+  try {
+    const { syncFreeModels } = require('./syncModels');
+    const live = await syncFreeModels();
+    if (live && live.length > 0) {
+      // Mutate arrays in-place để giữ reference cho module đã require
+      FREE_MODELS.length = 0;
+      FREE_MODELS.push(...live);
+      ALL_MODELS.length = 0;
+      ALL_MODELS.push(...FREE_MODELS);
+      // Clear old aliases
+      for (const k of Object.keys(MODEL_ALIASES)) delete MODEL_ALIASES[k];
+      for (const model of ALL_MODELS) {
+        MODEL_ALIASES[model.id] = model.id;
+        const shortId = model.id.replace('opencode/', '');
+        MODEL_ALIASES[shortId] = model.id;
+        if (shortId.endsWith('-free')) {
+          const withoutFree = shortId.replace('-free', '');
+          MODEL_ALIASES[withoutFree] = model.id;
+        }
+      }
+      console.log(`[models] Synced ${FREE_MODELS.length} free models from models.opencode.ai/api.json`);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[models] Sync failed, keep fallback:', e.message);
+  }
+  return false;
+}
+
 module.exports = {
   FREE_MODELS,
+  FALLBACK_FREE_MODELS,
   ALL_MODELS,
   MODEL_ALIASES,
   resolveModelId,
   isFreeModel,
   getModelInfo,
+  refreshFreeModels,
+  get FREE_MODELS_LIVE() { return FREE_MODELS; },
 };

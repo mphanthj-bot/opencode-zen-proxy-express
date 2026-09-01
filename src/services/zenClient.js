@@ -61,6 +61,9 @@ function normalizeZenError(httpStatus, body) {
  * @param {boolean} stream         - whether to stream the response
  * @returns {Promise<{stream:boolean, response?:object, data?:object, statusCode:number}>}
  */
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100 });
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
+
 function requestZenApi(method, path, headers, body, stream = false) {
   return new Promise((resolve, reject) => {
     const baseUrl = new URL(config.zenApiBaseUrl);
@@ -74,6 +77,7 @@ function requestZenApi(method, path, headers, body, stream = false) {
         'Content-Type': 'application/json',
       },
       timeout: 600000, // 10 minutes for long-running generations
+      agent: baseUrl.protocol === 'http:' ? httpAgent : httpsAgent,
     };
 
     const requester = baseUrl.protocol === 'http:' ? http : https;
@@ -195,6 +199,7 @@ async function forwardChatCompletion(payload) {
   // Inject default reasoning effort when the client did not request a valid
   // one. The field is forwarded as-is; Zen/DeepSeek only honors it on
   // reasoning-capable models and ignores it elsewhere.
+  // Preserve stream_options.include_usage if client sent it.
   normalized.reasoning_effort = resolveReasoningEffort(normalized.reasoning_effort);
 
   const headers = { Authorization: getAuthHeader() };
@@ -202,6 +207,43 @@ async function forwardChatCompletion(payload) {
   const body = JSON.stringify(normalized);
 
   return requestZenApi('POST', '/chat/completions', headers, body, isStream);
+}
+
+async function forwardResponses(payload) {
+  const normalized = { ...payload };
+  if (normalized.model) {
+    normalized.model = stripProviderPrefix(normalized.model);
+  }
+  // Responses API uses same reasoning_effort + supports stream/include fields verbatim
+  if (normalized.reasoning_effort !== undefined) {
+    normalized.reasoning_effort = resolveReasoningEffort(normalized.reasoning_effort);
+  }
+  const headers = { Authorization: getAuthHeader() };
+  const isStream = normalized.stream === true;
+  const body = JSON.stringify(normalized);
+  return requestZenApi('POST', '/responses', headers, body, isStream);
+}
+
+async function forwardMessages(payload) {
+  const normalized = { ...payload };
+  if (normalized.model) {
+    normalized.model = stripProviderPrefix(normalized.model);
+  }
+  const headers = { Authorization: getAuthHeader() };
+  // Anthropic messages: stream boolean
+  const isStream = normalized.stream === true;
+  const body = JSON.stringify(normalized);
+  return requestZenApi('POST', '/messages', headers, body, isStream);
+}
+
+async function forwardGemini(modelId, payload) {
+  const bare = stripProviderPrefix(modelId);
+  const headers = { Authorization: getAuthHeader() };
+  const isStream = payload && payload.stream === true;
+  const body = payload ? JSON.stringify(payload) : null;
+  // Zen Google endpoint: /models/<model_id> or /models/<model_id>:streamGenerateContent
+  const path = `/models/${encodeURIComponent(bare)}`;
+  return requestZenApi('POST', path, headers, body, isStream);
 }
 
 /**
@@ -214,6 +256,9 @@ async function fetchModels() {
 
 module.exports = {
   forwardChatCompletion,
+  forwardResponses,
+  forwardMessages,
+  forwardGemini,
   fetchModels,
   normalizeZenError,
   stripProviderPrefix,
